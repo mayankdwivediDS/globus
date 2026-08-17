@@ -46,6 +46,43 @@ GLOBUS_TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "search_drive_semantic",
+            "description": (
+                "Fuzzy/conceptual search over the member's Google Drive file "
+                "METADATA (filenames, file types, owners) using vector "
+                "similarity — NOT full-text content search, because Drive "
+                "sync only indexes metadata by default (GOOGLE_DRIVE_"
+                "METADATA_ONLY). USE this when search_files' keyword match "
+                "would miss it — e.g. 'find spreadsheets about the Q3 "
+                "budget' when no file is literally named that. Do NOT use "
+                "this expecting document content back; it only knows what a "
+                "file is CALLED, its type, and who owns it. Returns [] with "
+                "an 'error' key if no index has been built yet for this "
+                "account (needs scripts/build_drive_index.py to have run)."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string",
+                              "description": "what to search for, in natural language"},
+                    "limit": {"type": "integer",
+                              "description": "max results (default 10, max 50)"},
+                    "mime_type": {"type": "string",
+                                  "description": "OPTIONAL: substring filter on mime type, e.g. \"spreadsheet\", \"pdf\", \"document\""},
+                    "owner_email": {"type": "string",
+                                    "description": "OPTIONAL: only files owned by this exact email address"},
+                    "modified_after": {"type": "string",
+                                        "description": "OPTIONAL: ISO date/datetime — only files modified on/after this"},
+                    "modified_before": {"type": "string",
+                                         "description": "OPTIONAL: ISO date/datetime — only files modified on/before this"},
+                },
+                "required": ["query"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "read_file",
             "description": (
                 "Read the full text of one specific file by its file_id "

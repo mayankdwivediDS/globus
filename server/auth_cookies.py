@@ -26,9 +26,10 @@ import time
 # Module state set via configure().
 _SESSION_SECRET: bytes = b""
 _SESSION_TTL: int = 30 * 24 * 3600  # 30 days, matches the legacy default
+_COOKIE_SECURE: bool = True
 
 
-def configure(*, session_secret, session_ttl=None):
+def configure(*, session_secret, session_ttl=None, secure=True):
     """Initialize the module. Called once at server startup from
     lead_server.py.
 
@@ -36,13 +37,24 @@ def configure(*, session_secret, session_ttl=None):
       used for voice tokens, but with a different payload shape so the
       two don't accidentally cross-validate.
     session_ttl:    cookie max-age in seconds (defaults to 30 days).
-    """
-    global _SESSION_SECRET, _SESSION_TTL
+    secure:         whether to set the cookie's Secure flag. Pass
+      False only for a plain-HTTP SITE (e.g. local/Docker dev at
+      http://localhost:8090) — a browser silently REFUSES to store a
+      Secure cookie it received over HTTP, which otherwise makes login
+      look broken (OTP accepted, then immediately bounced back to
+      login) with no error anywhere. Real deployments behind TLS
+      should always pass True."""
+    global _SESSION_SECRET, _SESSION_TTL, _COOKIE_SECURE
     if not isinstance(session_secret, (bytes, bytearray)):
         raise TypeError("session_secret must be bytes")
     _SESSION_SECRET = bytes(session_secret)
     if session_ttl is not None:
         _SESSION_TTL = int(session_ttl)
+    _COOKIE_SECURE = bool(secure)
+
+
+def _cookie_flags():
+    return "HttpOnly; Secure; SameSite=Lax" if _COOKIE_SECURE else "HttpOnly; SameSite=Lax"
 
 
 def _audience(value):
@@ -101,11 +113,11 @@ def make_cookie(email, *, audience):
                    hashlib.sha256).hexdigest()
     token = (base64.urlsafe_b64encode(payload.encode())
              .decode().rstrip("=") + "." + mac)
-    return ("bws_member=" + token + "; Path=/; HttpOnly; Secure; "
-            "SameSite=Lax; Max-Age=" + str(_SESSION_TTL))
+    return ("bws_member=" + token + "; Path=/; " + _cookie_flags()
+            + "; Max-Age=" + str(_SESSION_TTL))
 
 
-# Set-Cookie value that clears the session (Max-Age=0). Same Path +
-# flags as the live cookie so browsers actually delete it.
-CLEAR_COOKIE = ("bws_member=; Path=/; HttpOnly; Secure; "
-                "SameSite=Lax; Max-Age=0")
+def clear_cookie():
+    """Set-Cookie value that clears the session (Max-Age=0). Same Path +
+    flags as the live cookie (must match, or browsers won't delete it)."""
+    return "bws_member=; Path=/; " + _cookie_flags() + "; Max-Age=0"

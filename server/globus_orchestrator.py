@@ -56,6 +56,13 @@ try:
     _GMAIL_AVAILABLE = True
 except Exception:
     _GMAIL_AVAILABLE = False
+# Drive semantic-metadata search — only registered if faiss/numpy are
+# installed (requirements-optional.txt). Absent by default; the tool
+# dispatch below reports a clean "not installed" rather than 500ing.
+try:
+    from drive_index import FAISS_AVAILABLE as _FAISS_AVAILABLE, search_drive_index
+except Exception:
+    _FAISS_AVAILABLE = False
 from globus_chat_helpers import (
     _globus_capabilities_block, _globus_tools_instructions,
     _strip_tool_markup,
@@ -337,6 +344,38 @@ def globus_read_file(email, file_id, max_chars=GLOBUS_READ_FILE_MAX_CHARS):
         return live
     return {"error": f"file has no extracted content yet (source_type="
                      f"{f['source_type']!r})"}
+
+
+# ─────────────────────────────────────────────────────────────────────
+# globus_search_drive_semantic — FAISS metadata search, fanned out across
+# every Google account this member has connected (the tool schema doesn't
+# expose provider_account — a member with 2 Drive accounts wants one
+# search, not two separate tool calls).
+# ─────────────────────────────────────────────────────────────────────
+
+def globus_search_drive_semantic(email, query, limit=10, **filters):
+    if not _FAISS_AVAILABLE:
+        return {"error": "faiss/numpy not installed on this install"}
+    accounts = [r["provider_account"] for r in (db_read(
+        "SELECT DISTINCT provider_account FROM globus_oauth_connections "
+        "WHERE email=%s AND source_types LIKE '%%drive%%'", (email,)) or [])]
+    if not accounts:
+        return {"error": "no Google Drive account connected"}
+    merged = []
+    errors = []
+    for account in accounts:
+        res = search_drive_index(email, account, query, limit=limit, **filters)
+        if isinstance(res, dict) and res.get("error"):
+            errors.append(f"{account}: {res['error']}")
+            continue
+        for row in res:
+            row["provider_account"] = account
+        merged.extend(res)
+    merged.sort(key=lambda r: r.get("score", 0), reverse=True)
+    merged = merged[:limit]
+    if not merged and errors:
+        return {"error": "; ".join(errors)}
+    return merged
 
 
 # ─────────────────────────────────────────────────────────────────────
@@ -820,6 +859,15 @@ def _run_tools_loop(system, msgs, email, max_tokens=2000,
                 elif name == "mark_chat_resolved":
                     result = mark_chat_resolved(
                         email, (inp.get("chat_name") or "").strip())
+                    iter_non_search_calls += 1
+                elif name == "search_drive_semantic" and _FAISS_AVAILABLE:
+                    result = globus_search_drive_semantic(
+                        email, inp.get("query", ""),
+                        limit=inp.get("limit", 10),
+                        mime_type=inp.get("mime_type"),
+                        owner_email=inp.get("owner_email"),
+                        modified_after=inp.get("modified_after"),
+                        modified_before=inp.get("modified_before"))
                     iter_non_search_calls += 1
                 elif name == "list_recent_emails" and _GMAIL_AVAILABLE:
                     result = globus_list_recent_emails(

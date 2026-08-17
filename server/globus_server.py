@@ -125,7 +125,8 @@ narada_plugins.load_all_plugins()
 import auth_cookies  # noqa: E402
 auth_cookies.configure(session_secret=SESSION_SECRET,
                        session_ttl=int(os.environ.get("SESSION_TTL_SEC",
-                                                       str(30 * 86400))))
+                                                       str(30 * 86400))),
+                       secure=SITE.startswith("https://"))
 
 import members_db  # noqa: E402
 members_db.configure(db_read=db_read, db_write=db_write)
@@ -179,7 +180,7 @@ from org_portal_html import (  # noqa: E402
     org_no_agents_html, org_desk_grants_html,
 )
 from globus_agents_catalog import GLOBUS_AGENTS_CATALOG  # noqa: E402
-from auth_cookies import make_cookie, CLEAR_COOKIE  # noqa: E402
+from auth_cookies import make_cookie, clear_cookie  # noqa: E402
 from google_oauth import (  # noqa: E402
     create_oauth_state, consume_oauth_state,
     google_authorize_url, google_exchange_code, google_userinfo,
@@ -839,7 +840,7 @@ class Handler(BaseHTTPRequestHandler):
             return self._send_html(200, org_terms_html(org, **self._org_legal_kw()))
         if route == "/members/logout":
             return self._redirect("/members/globus",
-                                  [("Set-Cookie", CLEAR_COOKIE)])
+                                  [("Set-Cookie", clear_cookie())])
 
         email = self._member_email()
         authed = bool(email) and org_member_active(email, org["id"])
@@ -850,7 +851,7 @@ class Handler(BaseHTTPRequestHandler):
             # A session cookie minted on another surface is NOT an identity
             # here. Clear it, or the employee bounces between a valid cookie
             # and a portal that keeps refusing them.
-            hdrs = [("Set-Cookie", CLEAR_COOKIE)] if email else None
+            hdrs = [("Set-Cookie", clear_cookie())] if email else None
             return self._send_html(200, org_login_html(
                 org, show_google=self._org_google_enabled()), hdrs)
 
@@ -1074,7 +1075,7 @@ class Handler(BaseHTTPRequestHandler):
             return self._send_html(200, _code_page(email))
 
         if route == "/members/logout":
-            return self._redirect("/", [("Set-Cookie", CLEAR_COOKIE)])
+            return self._redirect("/", [("Set-Cookie", clear_cookie())])
 
         # ---- Auth-gated routes ----
         email = self._member_email()
@@ -1436,7 +1437,14 @@ class Handler(BaseHTTPRequestHandler):
             return self._send_json(401, {"error": "sign in"})
 
         if route == "/members/globus/upload":
-            payload = self._json()
+            # Zip uploads arrive from fetch() as JSON, while the pasted-notes
+            # setup form uses application/x-www-form-urlencoded.  Parsing every
+            # request as JSON made the main setup button silently lose its
+            # source and markdown fields.
+            is_json = "application/json" in (
+                self.headers.get("Content-Type") or ""
+            ).lower()
+            payload = self._json() if is_json else self._form()
             src = payload.get("source") or ""
             try:
                 if src == "obsidian-zip":
@@ -1467,6 +1475,8 @@ class Handler(BaseHTTPRequestHandler):
                         source_identifier="",
                         file_count=None,
                         source_label="Pasted notes")
+                    if not is_json:
+                        return self._redirect("/members/globus")
                     return self._send_json(200, {
                         "ok": True, "char_count": len(text),
                     })

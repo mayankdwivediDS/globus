@@ -69,6 +69,12 @@ services:
       GLOBUS_HOST: 0.0.0.0
       GLOBUS_PORT: 8090
       SITE: ${SITE:-http://localhost:8090}
+      # Host-visible, gitignored, per-member JSON dumps from metadata-only
+      # syncs (GOOGLE_DRIVE_METADATA_ONLY, default on) — see sync_drive.py.
+      GLOBUS_METADATA_DIR: /app/local_data/drive-metadata
+      # FAISS index + sidecar built by scripts/build_drive_index.py from
+      # the metadata above — see server/drive_index.py.
+      GLOBUS_FAISS_INDEX_DIR: /app/local_data/faiss-index
     ports:
       - "${GLOBUS_PORT_EXPOSED:-8090}:8090"
     volumes:
@@ -79,6 +85,9 @@ services:
       # without rebuilding the image. Falls back to persona.example.md
       # inside the image if config/persona.md isn't present.
       - ./config:/app/config:ro
+      # Host-visible so you can inspect/back up the metadata JSON directly
+      # without a docker exec. Gitignored (local_data/) — never committed.
+      - ./local_data:/app/local_data
     networks: [globus_net]
 
   # A Claude OAuth bridge is intentionally not bundled: the current adapter

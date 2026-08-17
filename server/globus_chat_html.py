@@ -85,7 +85,7 @@ def globus_chat_html(email, vault, messages, daily_used, daily_cap, vault_stats)
         '    <div><div class="word">GLOBUS</div><div class="sub" id="voice-sub">tap to wake</div></div>'
         '  </div>'
         '  <div class="voice-status" id="voice-status">Tap the orb to talk hands-free</div>'
-        '  <div class="voice-error" id="voice-error">Voice engine blocked. In Brave, lower Shields for this site and allow the microphone.</div>'
+        '  <div class="voice-error" id="voice-error">Voice engine blocked. Check your browser\'s site settings and allow the microphone for this page.</div>'
         '</div>'
         '<div style="text-align:center;margin-bottom:1rem">'
         '<button class="transcript-toggle" id="transcript-toggle" type="button" '
@@ -619,7 +619,7 @@ def globus_chat_html(email, vault, messages, daily_used, daily_cap, vault_stats)
         '          voice_token:  window.GLOBUS_VOICE_TOKEN  || ""'
         '        },'
         '        onConnect: function(){'
-        '          set("listening", "Listening &mdash; just talk. Tap to end.", "listening");'
+        '          set("listening", "Listening \\u2014 just talk. Tap to end.", "listening");'
         # Open the transcript panel so live turns are visible as soon as
         # the call starts (Sumit asked — audio isn\'t always clear).
         '          try { window.openTranscriptIfClosed && window.openTranscriptIfClosed(); } catch (e) {}'
@@ -658,7 +658,7 @@ def globus_chat_html(email, vault, messages, daily_used, daily_cap, vault_stats)
         '          if (typeof window.addMsg === "function") window.addMsg(role, m.message);'
         '        },'
         '        onDisconnect: function(){ conv = null; set("idle", "Globus disconnected", "tap to talk"); },'
-        '        onError: function(e){ console.error("Globus voice err", e); set("listening", "Hiccup &mdash; keep talking or tap to restart.", "listening"); }'
+        '        onError: function(e){ console.error("Globus voice err", e); set("listening", "Hiccup \\u2014 keep talking or tap to restart.", "listening"); }'
         '      });'
         # Auto-open transcript on call start so the visible record is
         # there even when audio is unclear (Sumit explicitly asked —
@@ -745,7 +745,7 @@ def globus_chat_html(email, vault, messages, daily_used, daily_cap, vault_stats)
         '        requestAnimationFrame(poll);'
         '      })();'
         '    } catch (e) { conv = null; err.style.display = "block";'
-        '      set("idle", "Couldn\\u0027t start &mdash; allow the mic, then tap again.", "tap to talk"); }'
+        '      set("idle", "Couldn\\u0027t start \\u2014 allow the mic, then tap again.", "tap to talk"); }'
         '    finally { busy = false; }'
         '  }'
         '  orb.addEventListener("click", toggle);'

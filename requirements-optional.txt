@@ -7,3 +7,10 @@ composio>=0.7,<1
 # PDF text extraction for Drive vault ingestion. Without it, PDFs record a
 # named skip while stdlib OOXML extraction for docx/xlsx/pptx still works.
 pypdf>=4.0
+
+# FAISS semantic index over Drive file metadata (server/drive_index.py,
+# scripts/build_drive_index.py, the search_drive_semantic chat tool).
+# Without these, that tool is simply not offered — everything else in
+# Globus runs unaffected. See server/drive_index.py:FAISS_AVAILABLE.
+faiss-cpu>=1.7,<2
+numpy>=1.24

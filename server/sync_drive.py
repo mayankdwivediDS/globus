@@ -19,7 +19,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 from urllib.error import HTTPError
 
-from db_helpers import db_read, db_write
+from db_helpers import db_read, db_write, cfg
 from google_oauth import cleanup_expired_oauth_states
 from oauth_db import (
     get_oauth_connection, get_valid_access_token, update_oauth_sync_status,
@@ -30,9 +30,18 @@ from google_drive import (
     GOOGLE_DRIVE_XLSX_EXPORT_MAX_BYTES,
     drive_list_files, drive_classify,
     drive_export_with_mime, drive_download_file, extract_downloaded_text,
-    vault_files_upsert, write_extracted_file,
+    vault_files_upsert, write_extracted_file, write_metadata_dump,
 )
 from globus_vault_db import globus_upsert_source
+
+
+def _drive_metadata_only():
+    """GOOGLE_DRIVE_METADATA_ONLY (DB cfg, env fallback) — ON by default.
+    Set to '0' to restore the old behaviour of downloading + extracting full
+    file content. Read fresh on every sync (matches cfg()'s no-restart-needed
+    contract) so flipping it in the config table takes effect immediately."""
+    return (cfg("GOOGLE_DRIVE_METADATA_ONLY", "1") or "1").strip().lower() not in (
+        "0", "false", "no", "off")
 
 
 # Parallel-worker count per Drive sync. Each worker is an outbound HTTP call
@@ -86,6 +95,30 @@ def sync_drive_connection(conn):
     # Pass 1: discovery
     listed = drive_list_files(access, query, max_results=GOOGLE_DRIVE_MAX_FILES)
     listed.sort(key=lambda f: f.get("modifiedTime", ""), reverse=True)
+
+    # Metadata-only mode: dump the raw listing to a per-member JSON file and
+    # index every row as metadata (filename/size/dates/owners) WITHOUT ever
+    # downloading or extracting content — no file body is fetched from Drive,
+    # nothing lands under RAW_DATA_DIR. Default ON (GOOGLE_DRIVE_METADATA_ONLY).
+    if _drive_metadata_only():
+        write_metadata_dump(email, pa, "google-drive", listed)
+        indexed = 0
+        for f in listed:
+            fid = f.get("id")
+            if not fid:
+                continue
+            vault_files_upsert(
+                email=email, connection_id=conn_id, provider_account=pa,
+                source_type="google-drive", external_id=fid,
+                filename=f.get("name") or "(untitled)",
+                mime_type=f.get("mimeType") or "",
+                size_bytes=int(f["size"]) if f.get("size") else None,
+                modified_at=f.get("modifiedTime"),
+                skip_reason="metadata-only sync (GOOGLE_DRIVE_METADATA_ONLY=1)",
+                metadata={"webViewLink": f.get("webViewLink"),
+                          "owners": f.get("owners")})
+            indexed += 1
+        return indexed, 0
 
     # Pass 2: classify + index skips. Refresh token here so the parallel
     # pass below has a token good for ~1h with no per-file race.

@@ -34,6 +34,11 @@ WORKDIR /app
 # cryptography); everything else is stdlib.
 COPY requirements.txt requirements-optional.txt /app/
 RUN pip install --no-cache-dir -r /app/requirements.txt
+# requirements-optional.txt is installed too so the shipped image works
+# out of the box (PDF extraction, the FAISS Drive-metadata index). Every
+# consumer of these is import-guarded (FAISS_AVAILABLE etc.) — building
+# from source without this line still runs, just with those features off.
+RUN pip install --no-cache-dir -r /app/requirements-optional.txt
 
 # Copy the rest of the app. .dockerignore keeps __pycache__, .git, .env
 # out of the image.

@@ -35,8 +35,9 @@ fi
 
 log "waiting for MySQL at ${DB_HOST}:${DB_PORT}..."
 for i in $(seq 1 60); do
-    if mysqladmin ping -h"${DB_HOST}" -P"${DB_PORT}" \
-            -u"${DB_USER}" -p"${DB_PASSWORD}" --silent 2>/dev/null; then
+    if MYSQL_PWD="${DB_PASSWORD}" mysqladmin ping --ssl=0 \
+            -h"${DB_HOST}" -P"${DB_PORT}" -u"${DB_USER}" --silent \
+            2>/dev/null; then
         log "  MySQL is up after ${i}s"
         break
     fi
@@ -55,10 +56,9 @@ done
 
 if [ -f /app/schema/globus_schema.sql ]; then
     log "applying schema/globus_schema.sql..."
-    if mysql -h"${DB_HOST}" -P"${DB_PORT}" \
-            -u"${DB_USER}" -p"${DB_PASSWORD}" \
-            "${DB_NAME}" < /app/schema/globus_schema.sql 2>&1 \
-            | grep -v 'Using a password' >&2; then
+    if MYSQL_PWD="${DB_PASSWORD}" mysql --ssl=0 \
+            -h"${DB_HOST}" -P"${DB_PORT}" -u"${DB_USER}" \
+            "${DB_NAME}" < /app/schema/globus_schema.sql; then
         log "  schema OK"
     else
         log "ERROR: schema apply failed"
@@ -101,12 +101,11 @@ fi
 
 if [ -n "${GLOBUS_FIRST_MEMBER_EMAIL:-}" ]; then
     log "seeding first member: ${GLOBUS_FIRST_MEMBER_EMAIL}"
-    mysql -h"${DB_HOST}" -P"${DB_PORT}" \
-        -u"${DB_USER}" -p"${DB_PASSWORD}" \
+    MYSQL_PWD="${DB_PASSWORD}" mysql --ssl=0 \
+        -h"${DB_HOST}" -P"${DB_PORT}" -u"${DB_USER}" \
         "${DB_NAME}" -e \
         "INSERT IGNORE INTO members (email, status) VALUES \
-         ('${GLOBUS_FIRST_MEMBER_EMAIL}', 'active');" 2>&1 \
-        | grep -v 'Using a password' >&2 || true
+         ('${GLOBUS_FIRST_MEMBER_EMAIL}', 'active');" || true
 fi
 
 # ─────────────────────────────────────────────────────────────────────

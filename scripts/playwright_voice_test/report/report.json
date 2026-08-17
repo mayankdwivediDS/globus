@@ -1,0 +1,84 @@
+{
+  "site": "http://localhost:8090",
+  "login_email": "phase4-agent@example.test",
+  "started_at": "2026-08-13T14:16:44.954Z",
+  "steps": [
+    {
+      "name": "request OTP",
+      "detail": "POST /members/login for phase4-agent@example.test",
+      "at": "2026-08-13T14:16:45.143Z"
+    },
+    {
+      "name": "after email submit, url",
+      "detail": "http://localhost:8090/members/login",
+      "at": "2026-08-13T14:16:45.337Z"
+    },
+    {
+      "name": "email submit did not reach code page (rate-limited?) — reusing last issued OTP",
+      "detail": null,
+      "at": "2026-08-13T14:16:45.354Z"
+    },
+    {
+      "name": "OTP retrieved from container logs",
+      "detail": "983942",
+      "at": "2026-08-13T14:16:46.071Z"
+    },
+    {
+      "name": "submit OTP",
+      "detail": null,
+      "at": "2026-08-13T14:16:46.071Z"
+    },
+    {
+      "name": "logged in",
+      "detail": "http://localhost:8090/members/login/code",
+      "at": "2026-08-13T14:16:46.156Z"
+    },
+    {
+      "name": "open voice page",
+      "detail": "http://localhost:8090/members/globus",
+      "at": "2026-08-13T14:16:46.156Z"
+    },
+    {
+      "name": "window.GLOBUS_AGENT_ID",
+      "detail": "(empty)",
+      "at": "2026-08-13T14:16:46.720Z"
+    },
+    {
+      "name": "tap the orb",
+      "detail": null,
+      "at": "2026-08-13T14:16:46.721Z"
+    }
+  ],
+  "console_messages": [],
+  "network": [
+    {
+      "url": "http://localhost:8090/members/login",
+      "status": 200
+    },
+    {
+      "url": "http://localhost:8090/members/login",
+      "status": 200
+    },
+    {
+      "url": "http://localhost:8090/members/login/code?email=phase4-agent%40example.test",
+      "status": 200
+    },
+    {
+      "url": "http://localhost:8090/members/login/code",
+      "status": 200
+    },
+    {
+      "url": "http://localhost:8090/members/globus",
+      "status": 302
+    },
+    {
+      "url": "http://localhost:8090/members/login",
+      "status": 200
+    }
+  ],
+  "page_errors": [],
+  "agent_id_seen": "",
+  "verdict": "FAIL: exception during test — page.click: Timeout 30000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('#voice-orb')\u001b[22m\n",
+  "exception_stack": "page.click: Timeout 30000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('#voice-orb')\u001b[22m\n\n    at C:\\Users\\GLB-BLR-307\\Documents\\globus\\scripts\\playwright_voice_test\\test_voice_agent.js:128:16",
+  "finished_at": "2026-08-13T14:17:16.858Z"
+}

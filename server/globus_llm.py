@@ -19,8 +19,13 @@ What's here:
   - globus_call_claude(system, msgs, max_tokens): Anthropic API
     direct with prompt caching on system prompt; returns (text, usage)
     tuple.
+  - globus_call_gemini_chat(system, msgs, ...): Gemini API direct
+    (generateContent), OpenAI-shape tools/messages in and out.
   - _anthropic_to_openai_shape(resp): glue used by globus_call_chat
     when provider=anthropic.
+  - _openai_msgs_to_gemini(messages): glue used by
+    globus_call_gemini_chat to convert OpenAI-shape chat history
+    (incl. tool_calls / role=tool results) to Gemini's contents shape.
 
 Module deps: cfg (db_helpers), urllib, json, os. No DB writes, no
 configure() needed — cfg() reads happen on every call so config
@@ -82,10 +87,12 @@ def globus_call_chat(system, messages, max_tokens=2000, tools=None,
       claude-oauth (default) → Claude Sonnet via an operator bridge
       deepseek               → DeepSeek-V3 direct (legacy; not used by default)
       anthropic              → Anthropic API (Sonnet) direct
+      gemini                 → Gemini API (GEMINI_TEXT_MODEL) direct
 
-    The Globus brain is all-Claude: primary is OAuth-proxy Sonnet; if the proxy
-    is down the fallback is the Anthropic API direct (also Claude), never
-    DeepSeek. Returns OpenAI-shape dict identical to globus_call_deepseek_chat."""
+    Unrecognized/blank values fall through to the claude-oauth→Anthropic
+    default below — set GLOBUS_LLM_PROVIDER explicitly to one of the four
+    above, or chat silently never reaches the provider you configured.
+    Returns OpenAI-shape dict identical to globus_call_deepseek_chat."""
     provider = (cfg("GLOBUS_LLM_PROVIDER", "claude-oauth")
                 or "claude-oauth").strip().lower()
     if provider == "deepseek":
@@ -93,6 +100,8 @@ def globus_call_chat(system, messages, max_tokens=2000, tools=None,
     if provider == "anthropic":
         resp = globus_call_claude_raw(system, messages, max_tokens, tools)
         return _anthropic_to_openai_shape(resp)
+    if provider == "gemini":
+        return globus_call_gemini_chat(system, messages, max_tokens, tools)
     try:
         return globus_call_claude_oauth(
             system, messages, max_tokens, tools,
@@ -227,3 +236,166 @@ def globus_call_claude(system, messages, max_tokens=1500):
     text = "".join(p.get("text", "") for p in parts if p.get("type") == "text").strip()
     usage = d.get("usage") or {}
     return text, usage
+
+
+GEMINI_DEFAULT_MODEL = "gemini-2.5-flash"
+GEMINI_EMBED_MODEL = "gemini-embedding-001"
+GEMINI_EMBED_DIM = 768
+GEMINI_EMBED_BATCH = 100
+
+
+def _openai_tools_to_gemini(tools):
+    """OpenAI tool defs ({"type":"function","function":{name,description,
+    parameters}}) -> Gemini's [{"functionDeclarations": [...]}] shape."""
+    if not tools:
+        return None
+    decls = []
+    for t in tools:
+        fn = t.get("function") or t
+        decls.append({
+            "name": fn.get("name"),
+            "description": fn.get("description", ""),
+            "parameters": fn.get("parameters") or {"type": "object", "properties": {}},
+        })
+    return [{"functionDeclarations": decls}]
+
+
+def _openai_msgs_to_gemini(messages):
+    """OpenAI-shape chat history -> Gemini `contents` list.
+
+    Tracks tool_call_id -> function name (Gemini function responses are
+    matched by name, not id) so role=tool results can be converted back
+    into functionResponse parts. Consecutive tool messages are merged
+    into a single Gemini content, matching how Gemini expects the
+    responses for one multi-call assistant turn to arrive together."""
+    contents = []
+    call_id_to_name = {}
+    for m in messages:
+        role = m.get("role")
+        if role == "system":
+            continue
+        if role == "user":
+            contents.append({"role": "user",
+                              "parts": [{"text": m.get("content") or ""}]})
+        elif role == "assistant":
+            parts = []
+            if m.get("content"):
+                parts.append({"text": m["content"]})
+            for tc in (m.get("tool_calls") or []):
+                fn = tc.get("function") or {}
+                name = fn.get("name") or ""
+                call_id_to_name[tc.get("id")] = name
+                args_raw = fn.get("arguments") or "{}"
+                try:
+                    args = (json.loads(args_raw) if isinstance(args_raw, str)
+                            else (args_raw or {}))
+                except json.JSONDecodeError:
+                    args = {}
+                parts.append({"functionCall": {"name": name, "args": args}})
+            contents.append({"role": "model", "parts": parts})
+        elif role == "tool":
+            name = call_id_to_name.get(m.get("tool_call_id"), "")
+            raw = m.get("content") or "{}"
+            try:
+                response = json.loads(raw) if isinstance(raw, str) else raw
+            except json.JSONDecodeError:
+                response = {"result": raw}
+            if not isinstance(response, dict):
+                response = {"result": response}
+            part = {"functionResponse": {"name": name, "response": response}}
+            if contents and contents[-1]["role"] == "function":
+                contents[-1]["parts"].append(part)
+            else:
+                contents.append({"role": "function", "parts": [part]})
+    return contents
+
+
+def globus_call_gemini_chat(system, messages, max_tokens=2000, tools=None,
+                             model=None):
+    """Gemini API direct (generateContent). Same OpenAI-shape in/out as
+    globus_call_deepseek_chat so callers stay symmetric across providers."""
+    api_key = (cfg("GEMINI_API_KEY") or os.environ.get("GEMINI_API_KEY") or "").strip()
+    if not api_key:
+        raise RuntimeError("GEMINI_API_KEY not configured")
+    model = (model or cfg("GEMINI_TEXT_MODEL", GEMINI_DEFAULT_MODEL)
+              or GEMINI_DEFAULT_MODEL).strip()
+    body = {
+        "contents": _openai_msgs_to_gemini(messages),
+        "systemInstruction": {"parts": [{"text": system}]},
+        "generationConfig": {
+            "maxOutputTokens": max_tokens,
+            "temperature": 0.4,
+            # 2.5-series models "think" by default, spending maxOutputTokens
+            # on invisible reasoning before any visible text — with a small
+            # budget that can consume the whole call and return empty text
+            # (finishReason=MAX_TOKENS, 0 visible chars). Off by default here
+            # to match the other providers' turn latency/cost in this loop.
+            "thinkingConfig": {"thinkingBudget": 0},
+        },
+    }
+    gemini_tools = _openai_tools_to_gemini(tools)
+    if gemini_tools:
+        body["tools"] = gemini_tools
+    req = Request(
+        f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}",
+        data=json.dumps(body).encode("utf-8"), method="POST",
+        headers={"Content-Type": "application/json"})
+    with urlopen(req, timeout=120) as r:
+        d = json.loads(r.read().decode("utf-8"))
+    candidates = d.get("candidates") or []
+    cand_parts = (candidates[0].get("content") or {}).get("parts") or [] if candidates else []
+    text = "".join(p.get("text", "") for p in cand_parts if "text" in p)
+    tool_calls = []
+    for i, p in enumerate(cand_parts):
+        fc = p.get("functionCall")
+        if fc:
+            tool_calls.append({
+                "id": f"call_{i}",
+                "type": "function",
+                "function": {
+                    "name": fc.get("name"),
+                    "arguments": json.dumps(fc.get("args") or {}),
+                }})
+    msg = {"role": "assistant", "content": text}
+    if tool_calls:
+        msg["tool_calls"] = tool_calls
+    um = d.get("usageMetadata") or {}
+    return {
+        "id": None,
+        "choices": [{"index": 0, "message": msg, "finish_reason": "stop"}],
+        "model": model,
+        "usage": {
+            "prompt_tokens": um.get("promptTokenCount", 0),
+            "completion_tokens": um.get("candidatesTokenCount", 0),
+            "total_tokens": um.get("totalTokenCount", 0),
+        },
+    }
+
+
+def globus_call_gemini_embed(texts, model=None, dim=GEMINI_EMBED_DIM):
+    """Embed a list of strings via Gemini's batchEmbedContents. Returns a
+    list of float-vectors, same order/length as `texts`. Chunks internally
+    at GEMINI_EMBED_BATCH per request (not officially documented as batch-
+    capable, but confirmed working — see drive_index.py's one caller).
+    Used by the FAISS metadata index, never by the interactive chat loop
+    (embedding is a batch/offline concern, not a per-turn one)."""
+    api_key = (cfg("GEMINI_API_KEY") or os.environ.get("GEMINI_API_KEY") or "").strip()
+    if not api_key:
+        raise RuntimeError("GEMINI_API_KEY not configured")
+    model = (model or GEMINI_EMBED_MODEL).strip()
+    out = []
+    for i in range(0, len(texts), GEMINI_EMBED_BATCH):
+        chunk = texts[i:i + GEMINI_EMBED_BATCH]
+        body = {"requests": [
+            {"model": f"models/{model}",
+             "content": {"parts": [{"text": t}]},
+             "outputDimensionality": dim}
+            for t in chunk]}
+        req = Request(
+            f"https://generativelanguage.googleapis.com/v1beta/models/{model}:batchEmbedContents?key={api_key}",
+            data=json.dumps(body).encode("utf-8"), method="POST",
+            headers={"Content-Type": "application/json"})
+        with urlopen(req, timeout=120) as r:
+            d = json.loads(r.read().decode("utf-8"))
+        out.extend(e.get("values") or [] for e in (d.get("embeddings") or []))
+    return out

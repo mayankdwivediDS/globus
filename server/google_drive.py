@@ -57,6 +57,14 @@ GOOGLE_DRIVE_AGG_PER_FILE = 5_000
 # Per-member-isolated via path: {RAW}/{email}/{account}/{source}/{id}.{ext}
 RAW_DATA_DIR = os.environ.get("GLOBUS_RAW_DATA_DIR", "/var/lib/globus/raw-data")
 
+# Where per-sync metadata JSON dumps get written — deliberately separate
+# from RAW_DATA_DIR above: a metadata-only sync (GOOGLE_DRIVE_METADATA_ONLY)
+# never touches RAW_DATA_DIR at all, so nothing but filenames/sizes/dates
+# ever lands on disk. Per-member subdirectory; the whole tree is gitignored
+# (see .gitignore: local_data/).
+METADATA_DIR = os.environ.get("GLOBUS_METADATA_DIR",
+                               "/var/lib/globus/drive-metadata")
+
 # Mime → (extract_method, output_ext, export_mime_if_doc)
 DRIVE_EXTRACTABLE = {
     "application/vnd.google-apps.document":     ("export", "md",  "text/markdown"),
@@ -128,6 +136,42 @@ def write_extracted_file(email, provider_account, source_type, external_id,
     except OSError:
         pass
     return path, len(data)
+
+
+def write_metadata_dump(email, provider_account, source_type, files):
+    """Write one timestamped JSON file per sync run with ONLY listing
+    metadata (id/name/mime/size/dates/owners/link) — never file content.
+    Per-member subdirectory under METADATA_DIR. Returns the path."""
+    safe_em = re.sub(r"[^A-Za-z0-9@_.-]", "_", str(email))[:200]
+    safe_pa = re.sub(r"[^A-Za-z0-9@_.-]", "_", str(provider_account or "_"))[:200]
+    dir_path = os.path.join(METADATA_DIR, safe_em)
+    os.makedirs(dir_path, exist_ok=True)
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    path = os.path.join(dir_path, f"{safe_pa}__{source_type}__{stamp}.json")
+    payload = [{
+        "id": f.get("id"),
+        "name": f.get("name"),
+        "mimeType": f.get("mimeType"),
+        "size": f.get("size"),
+        "modifiedTime": f.get("modifiedTime"),
+        "createdTime": f.get("createdTime"),
+        "owners": f.get("owners"),
+        "webViewLink": f.get("webViewLink"),
+    } for f in files]
+    with open(path, "w", encoding="utf-8") as fh:
+        json.dump({
+            "email": email,
+            "provider_account": provider_account,
+            "source_type": source_type,
+            "synced_at": stamp,
+            "file_count": len(payload),
+            "files": payload,
+        }, fh, indent=2)
+    try:
+        os.chmod(path, 0o600)
+    except OSError:
+        pass
+    return path
 
 
 def _parse_iso_dt(s):

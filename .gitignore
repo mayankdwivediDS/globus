@@ -15,6 +15,10 @@ venv/
 .env.*
 !.env.example
 
+# Local metadata dumps (per-member Drive/Gmail listing JSON — no file
+# content, but still private data; never commit)
+/local_data/
+
 # Local scratch / test outputs
 /tmp/
 *.log
@@ -31,3 +35,7 @@ outcome-challenges/
 .idea/
 *.swp
 .DS_Store
+.now
+
+# Node (test tooling, e.g. scripts/playwright_voice_test)
+node_modules/

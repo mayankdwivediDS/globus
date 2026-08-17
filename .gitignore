@@ -26,6 +26,12 @@ globus-truth.db-wal
 judge-artifacts/
 outcome-challenges/
 
+# Local data (FAISS indexes, metadata, runtime files - NEVER commit)
+/local_data/
+/var/lib/
+*.faiss
+*.meta.json
+
 # Editor
 .vscode/
 .idea/

@@ -307,11 +307,12 @@ def _org_audience_label(g):
 
 
 def org_admin_html(org, email, members, grants, agent_options, message="",
-                   desk_html=""):
+                   desk_html="", member_access=None):
     """Org admin console (admins only): default-private sharing controls —
-    grant/revoke agents to everyone / a team / a person, and set each member's
-    team + role. `agent_options` = [(slug, name)]; `members` = rows with
-    email/role/department; `grants` = org_agent_grants rows.
+    grant/revoke agents to everyone / a team / a person, set each member's
+    team + role, and manage email/drive data access control. `agent_options` =
+    [(slug, name)]; `members` = rows with email/role/department; `grants` =
+    org_agent_grants rows; `member_access` = RBAC data access list.
 
     `desk_html` is the optional shared-inbox grant matrix from
     org_desk_grants_html(); '' when no desks are configured, so an install that
@@ -386,6 +387,44 @@ def org_admin_html(org, email, members, grants, agent_options, message="",
                    "<th align=\"left\">Role</th></tr></thead><tbody>"
                    + "".join(mrows) + "</tbody></table>")
 
+    # ── Data access control (Email + Drive) ──
+    member_access = member_access or []
+    access_rows = []
+    for ma in member_access:
+        me = ma.get("member_email")
+        access_rows.append(
+            "<tr><td>" + esc(me) + "</td>"
+            "<td><form method=\"POST\" action=\"/members/globus/admin/set-email-access\" "
+            "style=\"margin:0;display:flex;gap:.3rem\">"
+            "<input type=\"hidden\" name=\"email\" value=\"" + esc(me) + "\">"
+            "<select name=\"access_level\">"
+            "<option value=\"own\""
+            + (" selected" if ma.get("email_access") == "own" else "") + ">own</option>"
+            "<option value=\"team\""
+            + (" selected" if ma.get("email_access") == "team" else "") + ">+ team</option>"
+            "<option value=\"all\""
+            + (" selected" if ma.get("email_access") == "all" else "") + ">all</option>"
+            "</select>"
+            "<button class=\"btn\" style=\"padding:.2rem .5rem;font-size:.78rem\">Save</button>"
+            "</form></td>"
+            "<td><form method=\"POST\" action=\"/members/globus/admin/set-drive-access\" "
+            "style=\"margin:0;display:flex;gap:.3rem\">"
+            "<input type=\"hidden\" name=\"email\" value=\"" + esc(me) + "\">"
+            "<select name=\"access_level\">"
+            "<option value=\"own\""
+            + (" selected" if ma.get("drive_access") == "own" else "") + ">own</option>"
+            "<option value=\"team\""
+            + (" selected" if ma.get("drive_access") == "team" else "") + ">+ team</option>"
+            "<option value=\"all\""
+            + (" selected" if ma.get("drive_access") == "all" else "") + ">all</option>"
+            "</select>"
+            "<button class=\"btn\" style=\"padding:.2rem .5rem;font-size:.78rem\">Save</button>"
+            "</form></td></tr>")
+    access_tbl = ("<table style=\"width:100%;border-collapse:collapse\"><thead><tr>"
+                  "<th align=\"left\">Employee</th><th align=\"left\">Email Access</th>"
+                  "<th align=\"left\">Drive Access</th></tr></thead><tbody>"
+                  + "".join(access_rows) + "</tbody></table>")
+
     body = ("<section class=\"section\"><div class=\"container\">"
             "<div style=\"display:flex;justify-content:space-between;align-items:center;"
             "flex-wrap:wrap;gap:1rem\"><div><span class=\"eyebrow\">" + name
@@ -397,6 +436,14 @@ def org_admin_html(org, email, members, grants, agent_options, message="",
             + "<h3>Current grants</h3>" + grants_tbl
             + (desk_html or "")
             + "<h3 style=\"margin-top:2rem\">Team &amp; roles</h3>" + members_tbl
+            + "<h3 style=\"margin-top:2rem\">Data access</h3>"
+            + "<p class=\"muted small\">Control who can access emails and drives by role:</p>"
+            + "<ul class=\"muted small\" style=\"margin:.5rem 0 1rem 2rem\">"
+            "<li><strong>own</strong> — access to their own data only</li>"
+            "<li><strong>+ team</strong> — access to own data + team member data</li>"
+            "<li><strong>all</strong> — access to all members' data (admin only)</li>"
+            "</ul>"
+            + access_tbl
             + "</div></section>")
     return _org_page(org, name + " · Admin", body)
 

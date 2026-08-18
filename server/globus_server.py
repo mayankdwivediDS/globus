@@ -143,6 +143,10 @@ globus_auth.configure(session_secret=SESSION_SECRET)
 import org_db  # noqa: E402
 org_db.configure(db_read=db_read, db_write=db_write)
 
+# RBAC admin (Email + Drive access control for org portals)
+import rbac_admin  # noqa: E402
+rbac_admin.configure(db_read=db_read, db_write=db_write)
+
 # Google OAuth (Drive sync) — only relevant if GOOGLE_OAUTH_CLIENT_ID/SECRET
 # are set in the config table. configure() always runs; the helpers raise a
 # friendly RuntimeError if a client tries to start the flow without keys.
@@ -895,11 +899,13 @@ class Handler(BaseHTTPRequestHandler):
             if not is_org_admin(email, org["id"]):
                 return self._org_404()
             qs = parse_qs(parsed.query)
+            from rbac_admin import list_member_access
             return self._send_html(200, org_admin_html(
                 org, email, list_org_members(org["id"]),
                 list_grants(org["id"]), self._org_agent_options(),
                 message=(qs.get("msg") or [""])[0],
-                desk_html=self._desk_grants_html()))
+                desk_html=self._desk_grants_html(),
+                member_access=list_member_access(org["id"])))
 
         if route in self._ORG_SHARED_GET:
             return False
@@ -1013,6 +1019,16 @@ class Handler(BaseHTTPRequestHandler):
             elif action == "set-role":
                 set_member_role(oid, (form.get("email") or "").strip().lower(),
                                 (form.get("role") or "").strip())
+            elif action == "set-email-access":
+                from rbac_admin import set_member_email_access
+                set_member_email_access(
+                    oid, (form.get("email") or "").strip().lower(),
+                    (form.get("access_level") or "").strip())
+            elif action == "set-drive-access":
+                from rbac_admin import set_member_drive_access
+                set_member_drive_access(
+                    oid, (form.get("email") or "").strip().lower(),
+                    (form.get("access_level") or "").strip())
             elif action == "desk-agent":
                 if not self._set_desk_grant(
                         (form.get("mailbox") or "").strip().lower(),

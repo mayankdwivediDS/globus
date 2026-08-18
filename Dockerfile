@@ -17,7 +17,7 @@ LABEL org.opencontainers.image.licenses="AGPL-3.0"
 # wait-for-db + schema apply on first boot.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
-        tini default-mysql-client ca-certificates \
+        tini default-mysql-client ca-certificates cron \
     && rm -rf /var/lib/apt/lists/*
 
 # Non-root user — keeps any escape blast radius minimal. /app + the
@@ -50,8 +50,11 @@ COPY --chown=globus:globus public/   /app/public/
 COPY --chown=globus:globus globus_truth/ /app/globus_truth/
 COPY --chown=globus:globus docs/     /app/docs/
 COPY --chown=globus:globus docker/entrypoint.sh /app/docker/entrypoint.sh
-RUN sed -i 's/\r$//' /app/docker/entrypoint.sh /app/scripts/run_agent.py \
-    && chmod 0755 /app/docker/entrypoint.sh /app/scripts/run_agent.py
+COPY --chown=globus:globus docker/cron-entrypoint.sh /app/docker/cron-entrypoint.sh
+COPY --chown=globus:globus docker/crontab /etc/cron.d/globus
+RUN sed -i 's/\r$//' /app/docker/entrypoint.sh /app/docker/cron-entrypoint.sh /app/scripts/run_agent.py \
+    && chmod 0755 /app/docker/entrypoint.sh /app/docker/cron-entrypoint.sh /app/scripts/run_agent.py \
+    && chmod 0644 /etc/cron.d/globus
 
 # Persistent state lives in three volumes so re-creating the container
 # (e.g. on image upgrade) keeps briefs, Drive-cached files, session state,
@@ -59,8 +62,8 @@ RUN sed -i 's/\r$//' /app/docker/entrypoint.sh /app/scripts/run_agent.py \
 #   /var/lib/globus/agents   — agent_runner brief output dir
 #   /var/lib/globus/raw-data — google_drive disk cache
 #   /app/.state              — SESSION_SECRET + globus-truth.db
-RUN mkdir -p /var/lib/globus/agents /var/lib/globus/raw-data /app/.state \
-    && chown -R globus:globus /var/lib/globus /app/.state
+RUN mkdir -p /var/lib/globus/agents /var/lib/globus/raw-data /app/.state /var/log/globus \
+    && chown -R globus:globus /var/lib/globus /app/.state /var/log/globus
 VOLUME ["/var/lib/globus/agents", "/var/lib/globus/raw-data", "/app/.state"]
 
 # Env defaults targeting the compose-network MySQL service (db:3306).

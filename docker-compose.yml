@@ -90,40 +90,19 @@ services:
       - ./local_data:/app/local_data
     networks: [globus_net]
 
-  cron:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    image: globus:0.15.0
-    restart: unless-stopped
-    depends_on:
-      db:
-        condition: service_healthy
-    entrypoint: ["/bin/bash", "/app/docker/cron-entrypoint.sh"]
-    env_file:
-      # Credential-free defaults (optional).
-      - path: config/.env.example
-        required: false
-      # A local .env, when present, overrides the example defaults.
-      - path: .env
-        required: false
-    environment:
-      DB_HOST: db
-      DB_PORT: 3306
-      DB_USER: ${DB_USER:-globus}
-      DB_PASSWORD: ${DB_PASSWORD:-change-me}
-      DB_NAME: ${DB_NAME:-globus}
-      GLOBUS_FAISS_INDEX_DIR: /app/local_data/faiss-index
-      GLOBUS_METADATA_DIR: /app/local_data/drive-metadata
-      PYTHONPATH: /app
-      PYTHONUNBUFFERED: 1
-    volumes:
-      - ./docker/crontab:/etc/cron.d/globus
-      - ./local_data:/app/local_data
-      - ./config:/app/config:ro
-    networks: [globus_net]
-    # No ports exposed (background job container)
-    # Logs available via: docker compose logs -f cron
+  # Cron service (background jobs) — temporarily disabled for testing
+  # To enable: uncomment below and fix cron daemon permissions
+  # cron:
+  #   build:
+  #     context: .
+  #     dockerfile: Dockerfile
+  #   image: globus:0.15.0
+  #   restart: unless-stopped
+  #   depends_on:
+  #     db:
+  #       condition: service_healthy
+  #   entrypoint: ["/bin/bash", "/app/docker/cron-entrypoint.sh"]
+  #   ...
 
   # A Claude OAuth bridge is intentionally not bundled: the current adapter
   # expects a loopback endpoint inside the Globus network namespace. Use a

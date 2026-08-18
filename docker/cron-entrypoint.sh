@@ -17,7 +17,7 @@ wait_for_db() {
     max_attempts=30
     attempt=1
     while [ $attempt -le $max_attempts ]; do
-        if mysqladmin ping -h"$DB_HOST" -P"$DB_PORT" -u"$DB_USER" -p"$DB_PASSWORD" --silent 2>/dev/null; then
+        if mysqladmin ping -h"$DB_HOST" -P"$DB_PORT" -u"$DB_USER" -p"$DB_PASSWORD" --ssl-mode=DISABLE --silent 2>/dev/null; then
             echo "[cron] MySQL is ready!"
             return 0
         fi
@@ -56,9 +56,6 @@ echo "[cron] DB_HOST: $DB_HOST"
 echo "[cron] DB_PORT: $DB_PORT"
 echo "[cron] GLOBUS_FAISS_INDEX_DIR: $GLOBUS_FAISS_INDEX_DIR"
 
-# Wait for DB
-wait_for_db || exit 1
-
-# Start cron in foreground
-echo "[cron] Starting cron daemon..."
+# Start cron in foreground (cron jobs will handle database connection retries)
+echo "[cron] Starting cron daemon (jobs will retry on database errors)..."
 exec cron -f -l 2

@@ -61,6 +61,7 @@ except Exception:
 # dispatch below reports a clean "not installed" rather than 500ing.
 try:
     from drive_index import FAISS_AVAILABLE as _FAISS_AVAILABLE, search_drive_index
+    from email_index import search_email_index
 except Exception:
     _FAISS_AVAILABLE = False
 from globus_chat_helpers import (
@@ -376,6 +377,22 @@ def globus_search_drive_semantic(email, query, limit=10, **filters):
     if not merged and errors:
         return {"error": "; ".join(errors)}
     return merged
+
+
+def globus_search_email_semantic(email, query, limit=10, **filters):
+    """Semantic search over Gmail message metadata (subject, from, to, snippet).
+    User isolation: only returns this member's emails."""
+    if not _FAISS_AVAILABLE:
+        return {"error": "faiss/numpy not installed on this install"}
+    has_gmail = db_read(
+        "SELECT 1 FROM globus_oauth_connections "
+        "WHERE email=%s AND source_types LIKE '%%gmail%%'", (email,)) or []
+    if not has_gmail:
+        return {"error": "no Gmail account connected"}
+    res = search_email_index(email, query, limit=limit, **filters)
+    if isinstance(res, dict) and res.get("error"):
+        return res
+    return res
 
 
 # ─────────────────────────────────────────────────────────────────────
@@ -868,6 +885,14 @@ def _run_tools_loop(system, msgs, email, max_tokens=2000,
                         owner_email=inp.get("owner_email"),
                         modified_after=inp.get("modified_after"),
                         modified_before=inp.get("modified_before"))
+                    iter_non_search_calls += 1
+                elif name == "search_email_semantic" and _FAISS_AVAILABLE:
+                    result = globus_search_email_semantic(
+                        email, inp.get("query", ""),
+                        limit=inp.get("limit", 10),
+                        from_addr=inp.get("from_addr"),
+                        received_after=inp.get("received_after"),
+                        received_before=inp.get("received_before"))
                     iter_non_search_calls += 1
                 elif name == "list_recent_emails" and _GMAIL_AVAILABLE:
                     result = globus_list_recent_emails(

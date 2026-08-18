@@ -35,6 +35,9 @@ outcome-challenges/
 /var/lib/
 *.faiss
 *.meta.json
+/faiss-index/
+/drive-metadata/
+/email-metadata/
 
 # Editor
 .vscode/

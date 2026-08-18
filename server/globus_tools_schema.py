@@ -83,6 +83,39 @@ GLOBUS_TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "search_email_semantic",
+            "description": (
+                "Fuzzy/conceptual search over the member's Gmail message "
+                "METADATA (subject, from, to, snippet, date) using vector "
+                "similarity — NOT full-text body search. USE this when "
+                "list_recent_emails (chronological inbox view) would miss it "
+                "— e.g. 'find emails about Q3 planning' or 'messages from my "
+                "manager about budget'. Returns subject, from, to, snippet, "
+                "date, and similarity score. Returns [] with an 'error' key "
+                "if no index has been built yet (needs "
+                "scripts/build_email_index.py to have run)."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string",
+                              "description": "what to search for, in natural language"},
+                    "limit": {"type": "integer",
+                              "description": "max results (default 10, max 50)"},
+                    "from_addr": {"type": "string",
+                                  "description": "OPTIONAL: only emails from this sender"},
+                    "received_after": {"type": "string",
+                                       "description": "OPTIONAL: ISO date/datetime — only emails received on/after this"},
+                    "received_before": {"type": "string",
+                                        "description": "OPTIONAL: ISO date/datetime — only emails received on/before this"},
+                },
+                "required": ["query"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "read_file",
             "description": (
                 "Read the full text of one specific file by its file_id "

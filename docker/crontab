@@ -1,0 +1,51 @@
+# Globus sync + index rebuild jobs — runs inside Docker cron container.
+# Format: minute hour day month weekday command
+# All timestamps are UTC.
+
+# Environment setup (cron runs with minimal env; set PATH + PYTHONPATH)
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+PYTHONPATH=/app
+PYTHONUNBUFFERED=1
+
+# Logs (Docker mounts these to host /var/log/globus for inspection)
+LOGFILE=/var/log/globus/sync.log
+INDEXLOGFILE=/var/log/globus/index.log
+
+# ─────────────────────────────────────────────────────────────────────
+# Email + Drive Sync Jobs
+# ─────────────────────────────────────────────────────────────────────
+
+# Hourly incremental sync (new emails + files from last 1 hour)
+# Runs every hour at minute 0
+0 * * * * cd /app && python3 scripts/sync_email_hourly.py >> $LOGFILE 2>&1
+0 * * * * cd /app && python3 scripts/sync_drive_hourly.py >> $LOGFILE 2>&1
+
+# Daily deep sync (last 7 days, detect deletions, update flags)
+# Runs daily at 2:15 AM UTC
+15 2 * * * cd /app && python3 scripts/sync_email_daily.py >> $LOGFILE 2>&1
+15 2 * * * cd /app && python3 scripts/sync_drive_daily.py >> $LOGFILE 2>&1
+
+# ─────────────────────────────────────────────────────────────────────
+# FAISS Index Rebuild Jobs
+# ─────────────────────────────────────────────────────────────────────
+
+# Weekly email index rebuild (Sunday 3:30 AM UTC)
+# Rebuilds all email FAISS indexes from scratch
+30 3 * * 0 cd /app && python3 scripts/rebuild_email_indexes.py >> $INDEXLOGFILE 2>&1
+
+# Weekly drive index rebuild (Sunday 3:45 AM UTC)
+# Rebuilds all drive FAISS indexes from scratch
+45 3 * * 0 cd /app && python3 scripts/rebuild_drive_indexes.py >> $INDEXLOGFILE 2>&1
+
+# ─────────────────────────────────────────────────────────────────────
+# Maintenance Jobs
+# ─────────────────────────────────────────────────────────────────────
+
+# Daily audit log cleanup (Friday 4:00 AM UTC)
+# Keep last 90 days of access logs, remove older ones
+0 4 * * 5 cd /app && python3 scripts/cleanup_audit_logs.py 90 >> $LOGFILE 2>&1
+
+# Weekly database optimization (Saturday 1:00 AM UTC)
+# Optimize tables + clean up old sync runs
+0 1 * * 6 cd /app && python3 scripts/optimize_database.py >> $LOGFILE 2>&1
